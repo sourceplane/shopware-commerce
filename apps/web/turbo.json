@@ -1,0 +1,18 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "extends": ["//"],
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": [".open-next/**", ".next/**", "!.next/cache/**"],
+      "env": [
+        "SHOPWARE_STORE_DOMAIN",
+        "SHOPWARE_ACCESS_TOKEN",
+        "SHOPWARE_API_TYPE",
+        "SHOPWARE_USE_SEO_URLS",
+        "COMPANY_NAME",
+        "NEXT_PUBLIC_SITE_URL"
+      ]
+    }
+  }
+}
