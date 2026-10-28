@@ -9,7 +9,7 @@ metadata:
 spec:
   title: "Shopware's Next.js starter on Cloudflare Workers"
   summary: "Shopware's Next.js starter (a Next.js Commerce fork on Shopware 6's Store API) — a home page with a grid and a carousel, categories, search, product pages with variants, a cart and CMS pages, every Store API read a \"use cache\" entry dropped by tag through a bearer-checked route — runs as one Cloudflare Worker with Static Assets, its data cache in R2 and its tag cache and revalidation queue in Durable Objects, live before a Shopware store is connected, and becomes an Orun baseline that takes a new storefront from nothing to live on stage and prod in one landing."
-  state: started
+  state: completed
   milestones:
     - name: "SW0 — the spec"
       exitCriteria:
