@@ -11,7 +11,7 @@ theirs once they set its domain and access key.**
 
 | | |
 |---|---|
-| Status | In progress — SW0 on main |
+| Status | In progress — SW1 on main: the site runs on Workers |
 | Upstream | [shopwareLabs/nextjs-shopware-starter](https://github.com/shopwareLabs/nextjs-shopware-starter) (MIT, `license.md`), at `7066aa7` (2026-05-20) |
 | Reference | [commerce](https://github.com/sourceplane/commerce) — the same OpenNext, R2 and Durable Object shape for a Next.js Commerce storefront on a hosted commerce API |
 | Key | `SW` |

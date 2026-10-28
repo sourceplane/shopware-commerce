@@ -1,0 +1,31 @@
+import { ensureStartsWith } from "lib/utils";
+
+export function getAccessToken(): string {
+  return `${process.env.SHOPWARE_ACCESS_TOKEN}`;
+}
+
+export function getStoreDomainWithApiType(): string {
+  return getStoreDomain() + "/" + getApiType();
+}
+
+// The domain as the owner wrote it: with no scheme it is https (upstream's
+// rule); one that names its scheme keeps it, so a store served over plain
+// http (a local Shopware, a stand-in) is reachable — upstream turned
+// `http://shop` into `https://http://shop`.
+export function getStoreDomain(): string {
+  const domain = (process.env.SHOPWARE_STORE_DOMAIN ?? "").trim().replace(/\/+$/, "");
+  if (!domain) return "";
+  return /^https?:\/\//.test(domain) ? domain : ensureStartsWith(domain, "https://");
+}
+
+export function getApiType(): "store-api" | "admin-api" {
+  if (`${process.env.SHOPWARE_API_TYPE!}` === "admin-api") {
+    return "admin-api";
+  }
+
+  return "store-api";
+}
+
+export function isSeoUrls(): boolean {
+  return `${process.env.SHOPWARE_USE_SEO_URLS}` === "true";
+}

@@ -1,0 +1,124 @@
+apiVersion: sourceplane.io/v1
+kind: Component
+metadata:
+  name: web
+  description: The Shopware storefront (Next.js on Cloudflare Workers + Static Assets via @opennextjs/cloudflare, per environment; R2 + Durable Objects as the Next.js cache; an empty storefront that says how to connect a Shopware store until one is connected)
+spec:
+  type: cloudflare-workers-assets-turbo
+  lifecycle: production
+  owner: platform
+  # Its pages, attached to it in the workspace's catalog: what the Docs
+  # library shows for it, and what the catalog's docs and runbook checks read.
+  # Generated from what this manifest and its sources declare.
+  docs:
+    overview: docs/overview.md
+    pages:
+      - { path: docs/architecture.md, role: architecture, title: Architecture }
+      - { path: docs/runbook.md, role: runbook, title: Runbook }
+  # `app`, not `web`: a domain and a component share one name space in the
+  # catalog, and a domain called `web` hid this component from it.
+  domain: app
+  path: apps/web
+  # Its own lane per environment: the Next.js build is the longest job in the
+  # plan, and a shared lane would wait on it.
+  lane: isolated
+  # INFRA BEFORE APP. The R2 bucket is the Worker's incremental cache, bound
+  # by name, and the name is rendered into its config during the build from
+  # the wiring document the cloudflare-r2 root lease-publishes after its
+  # apply. A job resolves its secrets when it STARTS, so on a merge to main
+  # this deploy waits for that environment's apply (enforced) and the document
+  # is there; a pull request deploys nothing, so nothing on one waits
+  # (advisory). The Durable Objects (tag cache, revalidation queue) need no
+  # root — the Worker exports their classes and the migration creates them on
+  # deploy.
+  dependsOn:
+    - component: cloudflare-r2
+      mode: enforced
+      modeRules:
+        - mode: advisory
+          when:
+            triggerRef: github-pull-request
+  secretEnv:
+    WIRING_CLOUDFLARE_R2_STAGE: "secret://shopware-commerce/shopware-commerce/stage/WIRING_CLOUDFLARE_R2"
+    WIRING_CLOUDFLARE_R2_PROD: "secret://shopware-commerce/shopware-commerce/prod/WIRING_CLOUDFLARE_R2"
+  # The store, connected after the build by its owner: the Shopware shop's
+  # Store API domain and its sales channel's access key, per environment. The
+  # build inlines both (next.config.ts `env`), so connecting a store is a
+  # redeploy; when absent — every fresh product — the storefront calls no
+  # Shopware and says how to connect a store (lib/shopware/connection.ts).
+  # SHOPWARE_REVALIDATION_SECRET, the bearer app/api/revalidate checks, never
+  # reaches the build: the deploy hands it to the Worker as a secret
+  # (buildCommand below; the README's "Connecting Shopware").
+  optionalSecretEnv:
+    SHOPWARE_STORE_DOMAIN: "secret://shopware-commerce/shopware-commerce/{{ .environment }}/SHOPWARE_STORE_DOMAIN"
+    SHOPWARE_ACCESS_TOKEN: "secret://shopware-commerce/shopware-commerce/{{ .environment }}/SHOPWARE_ACCESS_TOKEN"
+    SHOPWARE_REVALIDATION_SECRET: "secret://shopware-commerce/shopware-commerce/{{ .environment }}/SHOPWARE_REVALIDATION_SECRET"
+  subscribe:
+    environments:
+      - name: dev
+        profile: verify
+      - name: stage
+        profile: verify
+        profileRules:
+          - profile: deploy
+            when:
+              triggerRef: github-push-main
+      - name: prod
+        profile: verify
+        profileRules:
+          - profile: deploy
+            when:
+              triggerRef: github-push-main
+  parameters:
+    nodeVersion: "22"
+    pnpmVersion: "10.12.1"
+
+    workspaceDir: ../..
+    appDir: .
+
+    turboFilter: "@app/web"
+    wranglerConfig: wrangler.jsonc
+
+    # @opennextjs/cloudflare emits a Worker entrypoint plus a static-assets
+    # directory bound via ASSETS — both deploy in one `wrangler deploy`.
+    workerEntrypoint: .open-next/worker.js
+    assetsDir: .open-next/assets
+
+    # Per-env worker name: shopware-commerce-web-{dev,stage,prod}. The rendered
+    # wrangler.jsonc names the same Worker (its self-reference binding needs it).
+    workerName: shopware-commerce-web
+    environmentAwareWorkerName: true
+
+    # The account's workers.dev subdomain; exported to the smoke step as
+    # ${WORKERS_DEV_SUBDOMAIN} and used to build ${DEPLOYED_URL}.
+    workersDevSubdomain: your-workers-subdomain
+
+    installCommand: pnpm install --frozen-lockfile
+    # Render this environment's wrangler config, then build. stage and prod
+    # render from the wiring document their cloudflare-r2 apply published
+    # (secretEnv above, resolved before the job's first step); dev, which no
+    # root applies to and which only verifies, renders from the committed
+    # fixture. The committed wrangler.jsonc (the fixture render) is what the
+    # composition's verify-app-structure step finds before this runs. The
+    # build is for this environment's origin: NEXT_PUBLIC_SITE_URL (the
+    # sitemap's, robots.txt's and the Open Graph links' origin) is the
+    # environment's SITE_URL (intent.yaml), else its workers.dev URL.
+    # SHOPWARE_REVALIDATION_SECRET never reaches the build (`env -u`), so no
+    # bundle carries it; on a deploy lane it then goes to the Worker as a
+    # SECRET (tooling/wire/worker-secrets.mjs: `wrangler secret bulk` over
+    # stdin; a verify lane holds no Cloudflare credential and pushes nothing).
+    buildCommand: node ../../tooling/wire/live.mjs --template wrangler.template.jsonc --out wrangler.jsonc --components cloudflare-r2 --env "${ORUN_ENVIRONMENT}" --fixture wiring.fixture.json --fixture-envs dev && NEXT_PUBLIC_SITE_URL="${SITE_URL:-https://shopware-commerce-web-${ORUN_ENVIRONMENT}.your-workers-subdomain.workers.dev}" env -u SHOPWARE_REVALIDATION_SECRET pnpm exec turbo run build --filter=@app/web && node ../../tooling/wire/worker-secrets.mjs --secret SHOPWARE_REVALIDATION_SECRET --worker "shopware-commerce-web-${ORUN_ENVIRONMENT}" --config wrangler.jsonc
+
+    # Smoke: the storefront answers (`/` is the store's home, or before a
+    # store is connected the page that says how to connect one), and the
+    # Worker itself answers /api/health, which no static file can. Not the
+    # store's name: that is the owner's to change, and HTML-escaped when it
+    # carries an `&` or `'`. Not a product either: before a store is connected
+    # there is none, and a connected store may be empty. Buffered before grep
+    # so an early match cannot SIGPIPE curl.
+    smokeCommand: 'curl -sfL -o /dev/null "${DEPLOYED_URL}/" && health=$(curl -sf "${DEPLOYED_URL}/api/health") && echo "${health}" | grep -q "\"ok\":true"'
+  labels:
+    team: platform
+    layer: delivery
+    surface: web
+    runtime: cloudflare
