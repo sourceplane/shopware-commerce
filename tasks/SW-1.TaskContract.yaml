@@ -1,0 +1,13 @@
+apiVersion: orun.io/v1
+kind: TaskContract
+metadata:
+  name: SW-1
+  title: "The shopware-commerce epic doc set"
+spec:
+  goal: The epic's README, design, plan, risks and status, and the three task contracts, are on main
+  affects:
+    - specs/epics/shopware-commerce
+    - tasks
+  doneWhen:
+    - the doc set and SW-1, SW-2 and SW-3 are merged
+  gates: []
